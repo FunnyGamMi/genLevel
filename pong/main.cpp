@@ -3,6 +3,7 @@
 //linker::input::additional dependensies Msimg32.lib; Winmm.lib
 
 #include "windows.h"
+#include "math.h"
 
 // секция данных игры  
 typedef struct {
@@ -12,8 +13,9 @@ typedef struct {
 
 // фундаментальные настройки игры
 namespace ginfo {
-    const int gridSize = 1024;
-    int cornerOffset = 128;
+    const int gridSize = 512;
+    float cornerOffset = 0.125f;
+    int cellSize = 2;
 }
 
 // библиотека типов клеток
@@ -95,8 +97,9 @@ void ShowRacketAndBall()
 void BuildLevel()
 {
     vector2 startOffset;
-    startOffset.x = window.width / 2 - ginfo::gridSize / 2;
-    startOffset.y = window.height / 2 - ginfo::gridSize / 2;
+    float halfGridSize = ginfo::gridSize * ginfo::cellSize / 2;
+    startOffset.x = window.width / 2 - halfGridSize;
+    startOffset.y = window.height / 2 - halfGridSize;
 
     //cellType filledCells[ginfo::gridSize][ginfo::gridSize];
     hFloor = (HBITMAP)LoadImageA(NULL, "racket.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
@@ -106,7 +109,7 @@ void BuildLevel()
         for (int y = 0; y < ginfo::gridSize; y++)
         {
             if (map[x][y] == cellType::floor) {
-                ShowRect(window.context, x + startOffset.x, y + startOffset.y, 1, 1, RGB(255, 0, 0));
+                ShowRect(window.context, x * ginfo::cellSize + startOffset.x, y * ginfo::cellSize + startOffset.y, ginfo::cellSize, ginfo::cellSize, RGB(255, 0, 0));
             }
             else
             {
@@ -118,12 +121,13 @@ void BuildLevel()
 
 void GenerateLevel()
 {
-    int oppositeOffset = ginfo::gridSize - ginfo::cornerOffset;
+    int cornerSize = floor(ginfo::gridSize * ginfo::cornerOffset);
+    int oppositeSize = ginfo::gridSize - cornerSize;
     for (int x = 0; x < ginfo::gridSize; x++)
     {
         for (int y = 0; y < ginfo::gridSize; y++)
         {
-            if ((x > ginfo::cornerOffset && x < oppositeOffset) || (y > ginfo::cornerOffset && y < oppositeOffset)) {
+            if ((x > cornerSize && x < oppositeSize) || (y > cornerSize && y < oppositeSize)) {
                 map[x][y] = cellType::floor;
             }
         }
