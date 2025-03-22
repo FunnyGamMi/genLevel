@@ -4,6 +4,7 @@
 
 #include "windows.h"
 #include "math.h"
+#include "debugapi.h"
 
 // секция данных игры  
 typedef struct {
@@ -13,9 +14,12 @@ typedef struct {
 
 // фундаментальные настройки игры
 namespace ginfo {
-    const int gridSize = 512;
+    const int gridSize = 32;
     float cornerOffset = 0.125f;
-    int cellSize = 2;
+    int cellSize = 12;
+    int outerWallSize = 8;
+
+    float hallwaySize = 0.1f;
 }
 
 // библиотека типов клеток
@@ -25,6 +29,8 @@ enum class cellType {
     wall,
     door,
     lift,
+
+    reserved,
 };
 
 struct {
@@ -42,6 +48,23 @@ cellType map[ginfo::gridSize][ginfo::gridSize];// массив сетки уровня
 HBITMAP hBack;// хэндл для фонового изображения
 HBITMAP hFloor;
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////// cекция кода
+
+// Core функции
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+int GetRandom(int min = 1, int max = 0)
+{
+    if (max > min)
+    {
+        return rand() % min + (max - min);
+    }
+    else
+    {
+        return rand() % min;
+    }
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void ShowBitmap(HDC hDC, int x, int y, int x1, int y1, HBITMAP hBitmapBall, bool alpha = false)
 {
@@ -75,12 +98,15 @@ void ShowBitmap(HDC hDC, int x, int y, int x1, int y1, HBITMAP hBitmapBall, bool
 HBRUSH hbrush;
 void ShowRect(HDC hDC, float left, float up, float sizeX, float sizeY, COLORREF color = RGB(255, 255, 255))
 {
-    if (!hbrush) hbrush = CreateHatchBrush(0, color);
+    hbrush = CreateSolidBrush(color);
     RECT rect;
 
     SelectObject(window.device_context, (HGDIOBJ)hbrush);
     SetRect(&rect, left, up, left + sizeX, up + sizeY);
     FillRect(hDC, &rect, hbrush);
+
+    DeleteObject(hbrush);
+
 }
 
 void ShowRacketAndBall()
@@ -92,7 +118,165 @@ void ShowRacketAndBall()
     //ShowBitmap(window.context, racket.x - racket.width / 2., racket.y, racket.width, racket.height, racket.hBitmap);// ракетка игрока
 }
 
+// Функции-условия
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
+bool HasNeightbour(int x, int y, cellType neightbour = cellType::empty) {
+    if (map[x][y] == neightbour) {
+        return false;
+    }
+    if (neightbour == cellType::empty && (x == 0 || x == ginfo::gridSize - 1 || y == 0 || y == ginfo::gridSize - 1)) {
+        return true;
+    }
+
+    for (int _x = x - 1; _x <= x + 1; _x++)
+    {
+        for (int _y = y - 1; _y <= y + 1; _y++)
+        {
+            if (_x != x && _y != y)
+            {
+                if (map[_x][_y] == neightbour) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+bool isInnerCorner(int x, int y) {
+    if (map[x][y] == cellType::empty) {
+        return false;
+    }
+    if ((map[x - 1][y] != cellType::empty && map[x][y - 1] != cellType::empty && map[x - 1][y - 1] == cellType::empty) ||
+        (map[x + 1][y] != cellType::empty && map[x][y + 1] != cellType::empty && map[x + 1][y + 1] == cellType::empty) ||
+        (map[x + 1][y] != cellType::empty && map[x][y - 1] != cellType::empty && map[x + 1][y - 1] == cellType::empty) ||
+        (map[x - 1][y] != cellType::empty && map[x][y + 1] != cellType::empty && map[x - 1][y + 1] == cellType::empty)) {
+        return true;
+    }
+    return false;
+}
+
+// Функции для чего-то там в генерации
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+void ThickenCell(int x, int y, int thickness, cellType targetType = cellType::floor, cellType newType = cellType::wall)
+{
+    if (map[x][y] != newType) {
+        return;
+    }
+    int halfThickness = thickness / 2;
+
+    for (int _x = x - halfThickness; _x <= x + halfThickness; _x++)
+    {
+        for (int _y = y - halfThickness; _y <= y + halfThickness; _y++)
+        {
+            if (_x >= 0 && _x < ginfo::gridSize && _y >= 0 && _y < ginfo::gridSize && map[_x][_y] == targetType) {
+                map[_x][_y] = newType;
+            }
+            /*else
+            {
+                int new_x = x - _x;
+                int new_y = y - _y;
+                if (new_x >= 0 && new_x < ginfo::gridSize && new_y >= 0 && new_y < ginfo::gridSize && map[new_x][new_y] == targetType) {
+                    map[new_x][new_y] = newType;
+                }
+            }*/
+        }
+    }
+}
+
+// Паттерны генерации этажей
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+void CrossLayout()
+{
+    int hallwayRealSize = ceil(ginfo::gridSize * ginfo::hallwaySize);
+    const int halfGridSize = ginfo::gridSize / 2;
+
+    for (int x = 0; x < ginfo::gridSize; x++)
+    {
+        for (int y = 0; y < ginfo::gridSize; y++)
+        {
+            if ((map[x][y] == cellType::floor || map[x][y] == cellType::reserved) && HasNeightbour(x, y, cellType::wall)) {
+                map[x][y] = cellType::reserved;
+                ThickenCell(x, y, hallwayRealSize, cellType::floor, cellType::reserved);
+            }
+        }
+    }
+
+    int halfHallwayRealSize = hallwayRealSize / 2;
+
+    for (int x = halfGridSize - halfHallwayRealSize; x <= halfGridSize + halfHallwayRealSize; x++)
+    {
+        for (int y = 0; y < ginfo::gridSize; y++)
+        {
+            if (map[x][y] == cellType::floor) {
+                map[x][y] = cellType::reserved;
+            }
+        }
+    }
+
+    for (int y = halfGridSize - halfHallwayRealSize; y <= halfGridSize + halfHallwayRealSize; y++)
+    {
+        for (int x = 0; x < ginfo::gridSize; x++)
+        {
+            if (map[x][y] == cellType::floor) {
+                map[x][y] = cellType::reserved;
+            }
+        }
+    }
+
+    for (int i = 0; i < 2; i++)
+    {
+        for (int j = 0; j < 2; j++)
+        {
+            int quarter[halfGridSize][halfGridSize];
+
+            for (int x = i * halfGridSize; x < i * halfGridSize + halfGridSize; x++)
+            {
+                for (int y = j * halfGridSize; y < j * halfGridSize + halfGridSize; y++)
+                {
+                    if (map[x][y] == cellType::floor) {
+                        int _x = x - i * halfGridSize;
+                        int _y = y - j * halfGridSize;
+                        quarter[x - i * halfGridSize][y - j * halfGridSize] = 100;
+                    }
+                    else
+                    {
+                        quarter[x - i * halfGridSize][y - j * halfGridSize] = 0;
+                    }
+                }
+            }
+
+            for (int x = 0; x < halfGridSize; x++)
+            {
+                for (int y = 0; y < halfGridSize; y++)
+                {
+                    if (x == 8 && y == 13) {
+                        int f = 1;
+                    }
+                    int possibility = quarter[x][y];
+                    int rnd = GetRandom(100);
+                    //if (possibility > 0)
+                    //{
+                        if (rnd <= 100)
+                        {
+                            map[x + i * halfGridSize][y + j * halfGridSize] == cellType::wall;
+                        }
+                    //}
+                }
+            }
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+void (*levelPatterns[])() = { CrossLayout };
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
 void BuildLevel()
 {
@@ -108,12 +292,23 @@ void BuildLevel()
     {
         for (int y = 0; y < ginfo::gridSize; y++)
         {
-            if (map[x][y] == cellType::floor) {
-                ShowRect(window.context, x * ginfo::cellSize + startOffset.x, y * ginfo::cellSize + startOffset.y, ginfo::cellSize, ginfo::cellSize, RGB(255, 0, 0));
-            }
-            else
+            cellType cell = map[x][y];
+            COLORREF color = RGB(0, 0, 0);
+
+
+            ///switch()
+
+            if (cell == cellType::floor)
             {
-                //ShowRect(window.context, x, y, 1, 1, RGB(10, 10, 10));
+                color = RGB(100, 100, 100);
+            }
+            else if ((cell == cellType::wall))
+            {
+                color = RGB(255, 255, 255);
+            }
+
+            if (cell != cellType::empty) {
+                ShowRect(window.context, x * ginfo::cellSize + startOffset.x, y * ginfo::cellSize + startOffset.y, ginfo::cellSize, ginfo::cellSize, color);
             }
         }
     }
@@ -127,11 +322,25 @@ void GenerateLevel()
     {
         for (int y = 0; y < ginfo::gridSize; y++)
         {
-            if ((x > cornerSize && x < oppositeSize) || (y > cornerSize && y < oppositeSize)) {
+            if ((x >= cornerSize && x <= oppositeSize) || (y >= cornerSize && y <= oppositeSize)) {
                 map[x][y] = cellType::floor;
             }
         }
     }
+
+    for (int x = 0; x < ginfo::gridSize; x++)
+    {
+        for (int y = 0; y < ginfo::gridSize; y++)
+        {
+            //if (HasEmptyNeightbour(x, y)) {
+            if (HasNeightbour(x, y) || isInnerCorner(x, y)) {
+                map[x][y] = cellType::wall;
+                ThickenCell(x, y, ginfo::outerWallSize);
+            }
+        }
+    }
+
+    levelPatterns[0]();
 }
 
 void InitWindow()
@@ -170,6 +379,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     _In_ LPWSTR    lpCmdLine,
     _In_ int       nCmdShow)
 {
+    //srand(timeGetTime());
+    srand(0);
 
     InitWindow();//здесь инициализируем все что нужно для рисования в окне
     InitGame();//здесь инициализируем переменные игры
