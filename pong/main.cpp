@@ -15,9 +15,9 @@ typedef struct {
 
 // фундаментальные настройки игры
 namespace ginfo {
-    const int gridSize = 128;
+    const int gridSize = 256;
     float cornerOffset = 0.125f;
-    int cellSize = 2;
+    int cellSize = 4;
     int outerWallSize = 8;
 
     float hallwaySize = 0.1f;
@@ -42,14 +42,21 @@ struct {
 
 class vector2 {
 public:
-    int x, y;
+    float x = 0;
+    float y = 0;
 
-    int magnitude()
+    float magnitude()
     {
         return sqrt(pow(x, 2) + pow(y, 2));
     }
 
-    vector2(int X, int Y)
+    vector2 unit()
+    {
+        float mag = magnitude();
+        return vector2(x / mag, y / mag);
+    }
+
+    vector2(float X, float Y)
     {
         x = X;
         y = Y;
@@ -73,7 +80,7 @@ int GetRandom(int min = 1, int max = 0)
 {
     if (max > min)
     {
-        return rand() % min + (max - min);
+        return rand() % (max - min) + min;
     }
     else
     {
@@ -203,6 +210,22 @@ void ThickenCell(int x, int y, int thickness, cellType targetType = cellType::fl
     }
 }
 
+void DivideArea(int count, int area[ginfo::gridSize][ginfo::gridSize], vector2 upLeftCorner, vector2 downRightCorner)
+{
+    float middle = 0.5 + GetRandom(-25, 25) / 100;
+    count -= 1;
+    if (count % 2 == 0)
+    {
+        int line = downRightCorner.x - upLeftCorner.x;
+        int dividation = line * middle;
+    }
+
+    if (count > 0)
+    {
+        DivideArea(count, area, upLeftCorner, downRightCorner);
+    }
+}
+
 // Паттерны генерации этажей
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -278,9 +301,7 @@ void CrossLayout()
                         int realx = x + i * halfGridSize;
                         int realy = y + j * halfGridSize;
                         room _room = room();
-                        vector2 vector = vector2();
-                        vector::x = realx;
-                        vector.y = realy;
+                        vector2 vector = vector2(realx, realy);
                         for (int n = 0; n < 4; n++)
                         {
                             _room.corners.push_back(vector);
@@ -302,8 +323,9 @@ void CrossLayout()
                     int size = _room->corners.size();
 
                     int theBiggestWall = 0;
-                    vector2* selected_point1;
-                    vector2* selected_point2;
+                    vector2* selected_point1 = &_room->corners[0];
+                    vector2* selected_point2 = &_room->corners[0];
+                    int point2_index = 0;
                     for (int n = 0; n < size; n++)
                     {
                         vector2* point1 = &_room->corners[n];
@@ -323,25 +345,41 @@ void CrossLayout()
                             theBiggestWall = wallSize;
                             selected_point1 = point1;
                             selected_point2 = point2;
+                            point2_index = n;
                         }
                     }
 
-                    vector2 wallVector = vector2();
-                    wallVector.x = selected_point2->x - selected_point1->x;
-                    wallVector.y = selected_point2->y - selected_point1->y;
+                    vector2 wallVector = vector2(selected_point2->x - selected_point1->x, selected_point2->y - selected_point1->y);
+                    vector2 normal = vector2(-wallVector.y, wallVector.x).unit();
 
-                    for (int _x = selected_point1->x; _x <= selected_point2->x; _x++)
+                    if (wallVector.x > 0)
                     {
-                        for (int _y = selected_point1->y; _y <= selected_point2->y; _y++)
+                        int y = selected_point1->y;
+                        for (int x = selected_point1->x; x <= selected_point2->x; x++)
                         {
-                            if (map[_x][_y] == cellType::floor) {
-                                vector2 newvector = vector2();
-                                newvector.x = _x;
-                                newvector.y = _y;
-                                _room->cells.push_back(newvector);
+                            if (map[x][y] == cellType::floor) {
+                                //vector2 newvector = vector2(_x, _y);
+                                //_room->cells.push_back(newvector);
 
-                                map[_x][_y] = cellType::reserved;
+                                map[x][y] = cellType::reserved;
                                 freeCells = true;
+                            }
+                            else
+                            {
+                                selected_point2->x = x - 1;
+
+                                cellType cell = map[x][y];
+                                
+                                bool reservedCell = true;
+                                for (int _x = x; _x <= selected_point2->x; _x++)
+                                {
+                                    if (cell == cellType::floor || not reservedCell)
+                                    {
+                                        reservedCell = not reservedCell;
+                                        vector2 new_corner = vector2(_x, y);
+                                        _room->corners.insert(_room->corners.begin() + point2_index + 1, new_corner);
+                                    }
+                                }
                             }
                         }
                     }
@@ -359,10 +397,8 @@ void (*levelPatterns[])() = { CrossLayout };
 
 void BuildLevel()
 {
-    vector2 startOffset;
     float halfGridSize = ginfo::gridSize * ginfo::cellSize / 2;
-    startOffset.x = window.width / 2 - halfGridSize;
-    startOffset.y = window.height / 2 - halfGridSize;
+    vector2 startOffset = vector2(window.width / 2 - halfGridSize, window.height / 2 - halfGridSize);
 
     //cellType filledCells[ginfo::gridSize][ginfo::gridSize];
     hFloor = (HBITMAP)LoadImageA(NULL, "racket.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
