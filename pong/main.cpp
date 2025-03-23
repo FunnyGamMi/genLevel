@@ -14,9 +14,9 @@ typedef struct {
 
 // фундаментальные настройки игры
 namespace ginfo {
-    const int gridSize = 32;
+    const int gridSize = 256;
     float cornerOffset = 0.125f;
-    int cellSize = 12;
+    int cellSize = 4;
     int outerWallSize = 8;
 
     float hallwaySize = 0.1f;
@@ -314,6 +314,22 @@ void BuildLevel()
     }
 }
 
+float floorS(float a, float d)
+{
+    return d*((int)(a/d));
+}
+
+int pCount = 0;
+
+int sign(float a)
+{
+    if (fabs(a) > 0.5)
+    {
+        if (a > 0) return 1; else return -1;
+    }
+    return 0;
+}
+
 void GenerateLevel()
 {
     int cornerSize = floor(ginfo::gridSize * ginfo::cornerOffset);
@@ -322,25 +338,79 @@ void GenerateLevel()
     {
         for (int y = 0; y < ginfo::gridSize; y++)
         {
-            if ((x >= cornerSize && x <= oppositeSize) || (y >= cornerSize && y <= oppositeSize)) {
-                map[x][y] = cellType::floor;
-            }
+            map[x][y] = cellType::empty;
         }
     }
 
-    for (int x = 0; x < ginfo::gridSize; x++)
+    //while (!GetAsyncKeyState(VK_RETURN))
     {
-        for (int y = 0; y < ginfo::gridSize; y++)
-        {
-            //if (HasEmptyNeightbour(x, y)) {
-            if (HasNeightbour(x, y) || isInnerCorner(x, y)) {
-                map[x][y] = cellType::wall;
-                ThickenCell(x, y, ginfo::outerWallSize);
+     //  Sleep(16);
+    }
+    pCount++;
+    int pM = 1000;
+    float dirX = 1;
+    float dirY = 0;
+    bool dir = false;
+    srand(0);
+    {
+        int len = 11;
+        int x = ginfo::gridSize /2 - sqrt(pCount);
+        int y = ginfo::gridSize /2 - sqrt(pCount);
+
+            for (int i = 0; i < pCount; i++)
+            {
+                int j = i;// floorS(i, 10 + rand() % 100);
+                if (i > len)
+                {
+                    len = i + rand() % 10+10;
+                    float jt = (rand() % 5)/2.;
+                    dirX = sin(j / (float)pCount * 3.14 * 2.+jt);
+                    dirY = cos(j / (float)pCount * 3.14 * 2.+jt);
+
+                    if (fabs(dirX) > fabs(dirY))
+                    {
+                        dirY = 0;
+                        if (x < ginfo::gridSize / 8) dirX = 1;
+                        if (x > ginfo::gridSize - ginfo::gridSize / 8) dirX = -1;
+                    }
+                    else
+                    {
+                        dirX = 0;
+                        if (y < ginfo::gridSize / 8) dirY = 1;
+                        if (y > ginfo::gridSize - ginfo::gridSize / 8) dirY = -1;
+
+
+                    }
+                    dirX = sign(dirX);
+                    dirY = sign(dirY);
+
+
+
+                }
+
+                map[(int)x][(int)y] = cellType::wall;
+
+                x += dirX;
+                y += dirY;
             }
+    }
+
+
+
+
+    float f = ginfo::gridSize/16;
+    for (int y = 0; y < ginfo::gridSize; y++)
+    {
+        for (int x = 0; x < ginfo::gridSize; x++)
+        {
+            float a = sin(f * x / (float)ginfo::gridSize);
+            float b = sin(f * y / (float)ginfo::gridSize);
+            float factor = 1-3*max(a , b);
+          //  if (factor>0) map[x][y] = cellType::wall;
         }
     }
 
-    levelPatterns[0]();
+
 }
 
 void InitWindow()
@@ -388,6 +458,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
     while (!GetAsyncKeyState(VK_ESCAPE))
     {
+        GenerateLevel();
         ShowRacketAndBall();//рисуем фон, ракетку и шарик
         BuildLevel();
         BitBlt(window.device_context, 0, 0, window.width, window.height, window.context, 0, 0, SRCCOPY);//копируем буфер в окно
